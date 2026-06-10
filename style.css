@@ -1,0 +1,5 @@
+body{font-family:Arial,sans-serif;max-width:900px;margin:auto;padding:20px}
+.container{display:flex;flex-direction:column;gap:10px}
+button{padding:10px;cursor:pointer}
+#recommendation{padding:15px;border:1px solid #ccc;font-weight:bold}
+li{margin:6px 0}
