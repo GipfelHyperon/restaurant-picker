@@ -1,0 +1,7 @@
+
+body{font-family:Arial,sans-serif;max-width:1200px;margin:auto;padding:20px}
+#map{height:650px;margin:20px 0;border:1px solid #ccc}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#recommendation{padding:15px;border:1px solid #ccc;margin:15px 0}
+li{margin-bottom:10px}
+button{padding:8px 12px;cursor:pointer}
