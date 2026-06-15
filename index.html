@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Restaurant Picker</title>
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🍽️ Restaurant Picker</h1>
+
+    <div class="controls">
+
+        <label>Ort:</label>
+
+        <input
+            type="text"
+            id="locationInput"
+            placeholder="z.B. Bremen"
+        >
+
+        <button id="searchLocationBtn">
+            Ort übernehmen
+        </button>
+
+        <button id="useMyLocation">
+            📍 Mein Standort
+        </button>
+
+        <label>
+            Radius:
+            <span id="radiusValue">5</span> km
+        </label>
+
+        <input
+            type="range"
+            id="radius"
+            min="1"
+            max="15"
+            value="5"
+        >
+
+        <button id="loadBtn">
+            Restaurants laden
+        </button>
+
+        <button id="recommendBtn">
+            🎲 Neue Empfehlung
+        </button>
+
+    </div>
+
+    <div class="filters">
+
+        <label>
+            <input
+                type="checkbox"
+                id="showAll"
+                checked
+            >
+            Alle anzeigen
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                id="hideClosed"
+            >
+            Geschlossene ausblenden
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Italienisch"
+            >
+            Italienisch
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Griechisch"
+            >
+            Griechisch
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Asiatisch"
+            >
+            Asiatisch
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Burger"
+            >
+            Burger
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Deutsch"
+            >
+            Deutsch
+        </label>
+
+        <label>
+            <input
+                type="checkbox"
+                class="cuisineFilter"
+                value="Sonstige"
+            >
+            Sonstige
+        </label>
+
+    </div>
+
+    <div id="recommendation"></div>
+
+    <div id="map"></div>
+
+    <h2>
+        📋 Restaurants
+        (<span id="restaurantCount">0</span>)
+    </h2>
+
+    <div
+        id="allList"
+        class="restaurant-grid"
+    ></div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- lokal gespeicherte opening_hours.js -->
+<script src="libs/opening_hours.js"></script>
+
+<script src="script.js"></script>
+
+</body>
+</html>
