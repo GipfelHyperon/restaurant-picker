@@ -625,79 +625,169 @@ async function loadRestaurants() {
 
 }
 
+
 async function overpassRequest(query) {
     const TIMEOUT_MS = 30000;
     const SERVER_DELAY_MS = 1500;
-    const controllers = overpassServers.map(() => new AbortController());
-    let winnerFound = false;
 
-    function waitForStart(ms, signal) {
-        return new Promise((resolve, reject) => {
-            if (signal.aborted) return reject(new DOMException('Abgebrochen', 'AbortError'));
-            const timer = setTimeout(() => {
-                signal.removeEventListener('abort', onAbort);
-                resolve();
-            }, ms);
-            function onAbort() {
-                clearTimeout(timer);
-                signal.removeEventListener('abort', onAbort);
-                reject(new DOMException('Abgebrochen', 'AbortError'));
-            }
-            signal.addEventListener('abort', onAbort, { once: true });
-        });
+    const controllers = overpassServers.map(
+        () => new AbortController()
+    );
+
+    const earlyStarts = [];
+    const delayTimers = [];
+
+    let finished = false;
+
+    // Wartende Server bei einem Fehler sofort starten
+    function startNextImmediately(index) {
+        if (earlyStarts[index]) {
+            earlyStarts[index]();
+        }
     }
 
     async function requestServer(server, index) {
         const controller = controllers[index];
+
         if (index > 0) {
-            await waitForStart(index * SERVER_DELAY_MS, controller.signal);
+            await new Promise(resolve => {
+                let started = false;
+
+                const start = () => {
+                    if (started) return;
+                    started = true;
+
+                    clearTimeout(delayTimers[index]);
+                    resolve();
+                };
+
+                earlyStarts[index] = start;
+
+                delayTimers[index] = setTimeout(
+                    start,
+                    index * SERVER_DELAY_MS
+                );
+            });
         }
-        if (controller.signal.aborted) {
-            throw new DOMException('Abgebrochen', 'AbortError');
+
+        if (finished || controller.signal.aborted) {
+            throw new Error("Nicht mehr benötigt");
         }
 
         const startTime = performance.now();
-        const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        console.log('Overpass gestartet:', server);
+
+        const timeout = setTimeout(
+            () => controller.abort(),
+            TIMEOUT_MS
+        );
+
+        console.log(
+            `🌐 Overpass gestartet: ${server}`
+        );
 
         try {
             const response = await fetch(server, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-                body: 'data=' + encodeURIComponent(query),
+                method: "POST",
+                headers: {
+                    "Content-Type":
+                        "application/x-www-form-urlencoded; charset=UTF-8"
+                },
+                body: "data=" + encodeURIComponent(query),
                 signal: controller.signal
             });
-            if (!response.ok) throw new Error('HTTP ' + response.status);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
             const data = await response.json();
-            if (!data || !Array.isArray(data.elements) || data.remark) {
-                throw new Error(data?.remark || 'Ungültige Overpass-Antwort');
+
+            if (
+                !data ||
+                !Array.isArray(data.elements) ||
+                data.remark
+            ) {
+                throw new Error(
+                    data?.remark || "Ungültige Antwort"
+                );
             }
-            const seconds = ((performance.now() - startTime) / 1000).toFixed(2);
-            console.log('Overpass erfolgreich:', server, seconds + 's,', data.elements.length, 'Objekte');
+
+            const seconds = (
+                (performance.now() - startTime) / 1000
+            ).toFixed(2);
+
+            console.log(
+                `✅ Overpass erfolgreich: ${server}`
+            );
+            console.log(`⏱️ Ladezeit: ${seconds}s`);
+            console.log(
+                `🍽️ OSM-Einträge: ${data.elements.length}`
+            );
+
             return { data, index };
+
         } catch (error) {
-            const seconds = ((performance.now() - startTime) / 1000).toFixed(2);
-            if (!controller.signal.aborted && !winnerFound) {
-                console.warn('Overpass fehlgeschlagen:', server, seconds + 's', error.message);
+            const seconds = (
+                (performance.now() - startTime) / 1000
+            ).toFixed(2);
+
+            if (!finished) {
+                console.warn(
+                    `⚠️ Overpass fehlgeschlagen: ${server}`,
+                    `${seconds}s`,
+                    error.message
+                );
+
+                // Nächsten Server ohne Wartezeit starten
+                startNextImmediately(index + 1);
             }
+
             throw error;
+
         } finally {
             clearTimeout(timeout);
         }
     }
 
     try {
-        const result = await Promise.any(overpassServers.map(requestServer));
-        winnerFound = true;
-        console.log('Overpass Gewinner:', overpassServers[result.index]);
+        const result = await Promise.any(
+            overpassServers.map((server, index) =>
+                requestServer(server, index)
+            )
+        );
+
+        console.log(
+            `🏆 Schnellster Server: ${
+                overpassServers[result.index]
+            }`
+        );
+
         return result.data;
+
     } catch (error) {
-        console.error('Alle Overpass-Server fehlgeschlagen:', error);
-        throw new Error('Kein Overpass-Server konnte gültige Daten liefern.');
+        console.error(
+            "Alle Overpass-Server fehlgeschlagen:",
+            error
+        );
+
+        throw new Error(
+            "Kein Overpass-Server konnte gültige Daten liefern."
+        );
+
     } finally {
-        controllers.forEach(controller => controller.abort());
+        finished = true;
+
+        delayTimers.forEach(clearTimeout);
+
+        // Auch noch wartende Anfragen beenden
+        earlyStarts.forEach(start => start?.());
+
+        controllers.forEach(controller =>
+            controller.abort()
+        );
     }
 }
+
 
 async function startSearch() {
 	
