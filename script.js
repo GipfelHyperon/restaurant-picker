@@ -791,55 +791,75 @@ nwr["amenity"~"^(restaurant|fast_food|cafe)$"]
 out center tags;
 `;
 
+
 const cacheKey =
     `restaurants:${userLat.toFixed(4)}:${userLon.toFixed(4)}:${radiusMeters}`;
+
+const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
 
 let data;
 
 try {
+    // Gespeicherte Restaurants laden
+    let cached = null;
 
-    const cached = sessionStorage.getItem(cacheKey);
+    try {
+        cached = localStorage.getItem(cacheKey);
+    } catch (error) {
+        console.warn("Cache nicht lesbar:", error);
+    }
 
     if (cached) {
-        const parsed = JSON.parse(cached);
+        try {
+            const parsed = JSON.parse(cached);
 
-        // Cache maximal 10 Minuten verwenden.
-        if (Date.now() - parsed.savedAt < 10 * 60 * 1000) {
-            data = parsed.data;
+            if (
+                parsed.data &&
+                Date.now() - parsed.savedAt < CACHE_DURATION
+            ) {
+                data = parsed.data;
+                console.log("Restaurants aus Cache geladen");
+            } else {
+                localStorage.removeItem(cacheKey);
+            }
+        } catch (error) {
+            console.warn("Cache ungültig:", error);
+            localStorage.removeItem(cacheKey);
         }
     }
 
+    // Keine gültigen Cache-Daten vorhanden
     if (!data) {
-        // Nur EIN Overpass-Request. overpassRequest übernimmt Timeout + Fallback.
         data = await overpassRequest(query);
 
-        sessionStorage.setItem(
-            cacheKey,
-            JSON.stringify({
-                savedAt: Date.now(),
-                data
-            })
-        );
+        // Daten für 7 Tage speichern
+        try {
+            localStorage.setItem(
+                cacheKey,
+                JSON.stringify({
+                    savedAt: Date.now(),
+                    data: data
+                })
+            );
+
+            console.log("Restaurants im Cache gespeichert");
+        } catch (error) {
+            // Auch bei vollem Speicher weiterarbeiten
+            console.warn("Cache konnte nicht gespeichert werden:", error);
+        }
     }
 
-} catch(error) {
-
+} catch (error) {
     console.error(error);
 
     alert(
         "Der Server antwortet momentan nicht. Bitte versuche es gleich erneut."
     );
 
-    document
-        .getElementById("loading")
-        .classList
-        .add("hidden");
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("loadBtn").disabled = false;
 
-    document
-        .getElementById("loadBtn")
-        .disabled = false;
-
-    if(recommendBtn){
+    if (recommendBtn) {
         recommendBtn.disabled = false;
     }
 
