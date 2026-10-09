@@ -629,51 +629,78 @@ async function loadRestaurants() {
 
 }
 
-async function overpassRequest(query){
+async function overpassRequest(query) {
+    const TIMEOUT_MS = 30000;
+    const SERVER_DELAY_MS = 1500;
+    const controllers = overpassServers.map(() => new AbortController());
+    let winnerFound = false;
 
-    // Der Timeout gilt für den KOMPLETTEN Request inklusive Download/JSON.
-    // So kann ein Overpass-Server die Seite nicht minutenlang blockieren.
-    for(const server of overpassServers){
-
-        const controller = new AbortController();
-        const timeout = setTimeout(
-            () => controller.abort(),
-            10000
-        );
-
-        try{
-
-            const response = await fetch(server,{
-                method:"POST",
-                headers:{
-                    "Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"
-                },
-                body:"data=" + encodeURIComponent(query),
-                signal:controller.signal
-            });
-
-            if(!response.ok){
-                throw new Error(`HTTP ${response.status}`);
+    function waitForStart(ms, signal) {
+        return new Promise((resolve, reject) => {
+            if (signal.aborted) return reject(new DOMException('Abgebrochen', 'AbortError'));
+            const timer = setTimeout(() => {
+                signal.removeEventListener('abort', onAbort);
+                resolve();
+            }, ms);
+            function onAbort() {
+                clearTimeout(timer);
+                signal.removeEventListener('abort', onAbort);
+                reject(new DOMException('Abgebrochen', 'AbortError'));
             }
-
-            // Wichtig: erst NACH dem vollständigen Body den Timeout beenden.
-            const text = await response.text();
-            const data = JSON.parse(text);
-
-            clearTimeout(timeout);
-            return data;
-
-        }catch(e){
-            clearTimeout(timeout);
-            console.warn("Overpass-Server fehlgeschlagen:", server, e);
-        }
-
+            signal.addEventListener('abort', onAbort, { once: true });
+        });
     }
 
-    throw new Error(
-        "Kein Overpass-Server erreichbar."
-    );
+    async function requestServer(server, index) {
+        const controller = controllers[index];
+        if (index > 0) {
+            await waitForStart(index * SERVER_DELAY_MS, controller.signal);
+        }
+        if (controller.signal.aborted) {
+            throw new DOMException('Abgebrochen', 'AbortError');
+        }
 
+        const startTime = performance.now();
+        const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        console.log('Overpass gestartet:', server);
+
+        try {
+            const response = await fetch(server, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: 'data=' + encodeURIComponent(query),
+                signal: controller.signal
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const data = await response.json();
+            if (!data || !Array.isArray(data.elements) || data.remark) {
+                throw new Error(data?.remark || 'Ungültige Overpass-Antwort');
+            }
+            const seconds = ((performance.now() - startTime) / 1000).toFixed(2);
+            console.log('Overpass erfolgreich:', server, seconds + 's,', data.elements.length, 'Objekte');
+            return { data, index };
+        } catch (error) {
+            const seconds = ((performance.now() - startTime) / 1000).toFixed(2);
+            if (!controller.signal.aborted && !winnerFound) {
+                console.warn('Overpass fehlgeschlagen:', server, seconds + 's', error.message);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    try {
+        const result = await Promise.any(overpassServers.map(requestServer));
+        winnerFound = true;
+        console.log('Overpass Gewinner:', overpassServers[result.index]);
+        return result.data;
+    } catch (error) {
+        console.error('Alle Overpass-Server fehlgeschlagen:', error);
+        throw new Error('Kein Overpass-Server konnte gültige Daten liefern.');
+    } finally {
+        controllers.forEach(controller => controller.abort());
+    }
 }
 
 async function startSearch() {
@@ -783,7 +810,7 @@ if(recommendBtn){
     );
 
     const query = `
-[out:json][timeout:8];
+[out:json][timeout:25];
 
 nwr["amenity"~"^(restaurant|fast_food|cafe)$"]
 (around:${radiusMeters},${userLat},${userLon});
@@ -796,73 +823,52 @@ const cacheKey =
     `restaurants:${userLat.toFixed(4)}:${userLon.toFixed(4)}:${radiusMeters}`;
 
 const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
-
 let data;
 
 try {
-    // Gespeicherte Restaurants laden
+    // Cache ist optional: Speicherfehler dürfen die Restaurantsuche nicht abbrechen.
     let cached = null;
-
     try {
         cached = localStorage.getItem(cacheKey);
     } catch (error) {
-        console.warn("Cache nicht lesbar:", error);
+        console.warn('Restaurant-Cache nicht lesbar:', error);
     }
 
     if (cached) {
         try {
             const parsed = JSON.parse(cached);
-
-            if (
-                parsed.data &&
-                Date.now() - parsed.savedAt < CACHE_DURATION
-            ) {
+            if (parsed && Array.isArray(parsed.data?.elements) &&
+                Number.isFinite(parsed.savedAt) &&
+                Date.now() - parsed.savedAt >= 0 &&
+                Date.now() - parsed.savedAt < CACHE_DURATION) {
                 data = parsed.data;
-                console.log("Restaurants aus Cache geladen");
+                console.log('Restaurants aus 7-Tage-Cache geladen:', data.elements.length);
             } else {
                 localStorage.removeItem(cacheKey);
             }
         } catch (error) {
-            console.warn("Cache ungültig:", error);
-            localStorage.removeItem(cacheKey);
+            console.warn('Restaurant-Cache ungültig:', error);
+            try { localStorage.removeItem(cacheKey); } catch (_) {}
         }
     }
 
-    // Keine gültigen Cache-Daten vorhanden
     if (!data) {
         data = await overpassRequest(query);
-
-        // Daten für 7 Tage speichern
         try {
-            localStorage.setItem(
-                cacheKey,
-                JSON.stringify({
-                    savedAt: Date.now(),
-                    data: data
-                })
-            );
-
-            console.log("Restaurants im Cache gespeichert");
+            localStorage.setItem(cacheKey, JSON.stringify({
+                savedAt: Date.now(), data
+            }));
+            console.log('Restaurant-Daten für 7 Tage gespeichert.');
         } catch (error) {
-            // Auch bei vollem Speicher weiterarbeiten
-            console.warn("Cache konnte nicht gespeichert werden:", error);
+            console.warn('Restaurant-Cache konnte nicht gespeichert werden (z. B. Speicher voll):', error);
         }
     }
-
 } catch (error) {
     console.error(error);
-
-    alert(
-        "Der Server antwortet momentan nicht. Bitte versuche es gleich erneut."
-    );
-
-    document.getElementById("loading").classList.add("hidden");
-    document.getElementById("loadBtn").disabled = false;
-
-    if (recommendBtn) {
-        recommendBtn.disabled = false;
-    }
-
+    alert('Der Server antwortet momentan nicht. Bitte versuche es gleich erneut.');
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('loadBtn').disabled = false;
+    if (recommendBtn) recommendBtn.disabled = false;
     return;
 }
 
