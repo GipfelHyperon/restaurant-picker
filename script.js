@@ -160,14 +160,10 @@ function updateRecommendationPreferenceControls(restaurantId){
 }
 
 const overpassServers = [
-
     "https://overpass-api.de/api/interpreter",
-
-    "https://overpass.kumi.systems/api/interpreter",
-
     "https://lz4.overpass-api.de/api/interpreter"
-
 ];
+
 
 const greenIcon = new L.Icon({
     iconUrl:
