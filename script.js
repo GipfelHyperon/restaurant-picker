@@ -953,7 +953,7 @@ try {
     }
 } catch (error) {
     console.error(error);
-    alert('Der Server antwortet momentan nicht. Bitte versuche es gleich erneut.');
+    alert('Die Restaurant-Server sind momentan nicht erreichbar oder überlastet. Bitte versuche es später erneut.');
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('loadBtn').disabled = false;
     if (recommendBtn) recommendBtn.disabled = false;
